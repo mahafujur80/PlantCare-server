@@ -147,7 +147,7 @@ app.get('/api/plant/:id', async (req: Request, res: Response) =>{
 
 // get tranding plants 
 app.get('/api/plants/trending', async (req: Request, res: Response)=>{
-  const result = await plantCollection.find().toArray();
+  const result = await plantCollection.find().limit(4).toArray();
   res.json(result);
 })
 
@@ -183,7 +183,11 @@ app.get("/", (req: Request, res: Response) => {
   res.send("hello there! this is a plant care server! 🚀");
 });
 
-// server start
+// Start a listener locally; Vercel imports the exported app as a function.
+if (!process.env.VERCEL) {
 app.listen(PORT, () => {
   console.log(`server is live http://localhost:${PORT} port 🔥`);
 });
+}
+
+export default app;
