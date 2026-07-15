@@ -145,6 +145,12 @@ app.get('/api/plant/:id', async (req: Request, res: Response) =>{
     res.json(plant);
 });
 
+// get tranding plants 
+app.get('/api/plants/trending', async (req: Request, res: Response)=>{
+  const result = await plantCollection.find().toArray();
+  res.json(result);
+})
+
 
 // get my added plants by userId 
  app.get('/api/my/plants', verifyToken, async (req: Request, res: Response) =>{
