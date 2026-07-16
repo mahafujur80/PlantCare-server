@@ -143,6 +143,9 @@ const plantCollection = plantDB?.collection("Plants");
     res.status(500).json({
       success: false,
       message: "Failed to fetch plants",
+      error: error instanceof Error ? error.message : String(error),
+      dbConnected: !!client,
+      collectionExists: !!plantCollection,
       plants: [],
       total: 0,
     });
