@@ -14,9 +14,19 @@ app.use(express.json());
 
 
 
-const JWKS = createRemoteJWKSet(
-  new URL(`${process.env.CLIENT_URL_FOR_JWT}/api/auth/jwks`)
-);
+// Lazy JWKS initialization to prevent crash if CLIENT_URL_FOR_JWT is not set
+let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+function getJWKS() {
+  if (!_jwks) {
+    if (!process.env.CLIENT_URL_FOR_JWT) {
+      throw new Error('CLIENT_URL_FOR_JWT environment variable is not set');
+    }
+    _jwks = createRemoteJWKSet(
+      new URL(`${process.env.CLIENT_URL_FOR_JWT}/api/auth/jwks`)
+    );
+  }
+  return _jwks;
+}
 
 const verifyToken = async (req: Request, res: Response, next: NextFunction) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -26,7 +36,8 @@ const verifyToken = async (req: Request, res: Response, next: NextFunction) => {
   }
 
   try {
-    await jwtVerify(token, JWKS);
+    const jwks = getJWKS();
+    await jwtVerify(token, jwks);
     next();
   } catch {
     return res.status(403).json({ message: 'Forbidden' });
@@ -35,19 +46,23 @@ const verifyToken = async (req: Request, res: Response, next: NextFunction) => {
 
 
 
-const uri = process.env.MONGODB_URI as string;
+const uri = process.env.MONGODB_URI;
+
+if (!uri) {
+  console.error('MONGODB_URI environment variable is not set!');
+}
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
-const client = new MongoClient(uri, {
+const client = uri ? new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
   }
-});
+}) : null;
 
-const plantDB = client.db("PlantCare");
-const plantCollection = plantDB.collection("Plants");
+const plantDB = client?.db("PlantCare");
+const plantCollection = plantDB?.collection("Plants");
 
 
   // user operations
@@ -58,7 +73,7 @@ const plantCollection = plantDB.collection("Plants");
         ...data,
         createdAt: new Date(),
       }
-      const result = await plantCollection.insertOne(newPlant);
+      const result = await plantCollection?.insertOne(newPlant);
       res.status(201).json({
         result,
         success: true,
@@ -110,16 +125,16 @@ const plantCollection = plantDB.collection("Plants");
     }
 
     // Pagination
-    const total = await plantCollection.countDocuments(filter);
+    const total = await plantCollection?.countDocuments(filter) ?? 0;
     const skip = (Number(page) - 1) * Number(limit);
     const totalPage = Math.ceil(total / Number(limit));
 
     const plants = await plantCollection
-      .find(filter)
+      ?.find(filter)
       .sort(sortOption)
       .skip(skip)
       .limit(Number(limit))
-      .toArray();
+      .toArray() ?? [];
 
     res.json({data: plants, page: Number(page), totalPage});
   } catch (error) {
@@ -136,39 +151,61 @@ const plantCollection = plantDB.collection("Plants");
 
 // get a single plant by id
 app.get('/api/plant/:id', async (req: Request, res: Response) =>{
-   const { id } = req.params;
-   const plant = await plantCollection.findOne({_id: new ObjectId(id as string)});
+  try {
+    const { id } = req.params;
+    const plant = await plantCollection?.findOne({_id: new ObjectId(id as string)});
     res.json(plant);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to fetch plant' });
+  }
 });
 
-// get tranding plants 
+// get trending plants 
 app.get('/api/plants/trending', async (req: Request, res: Response)=>{
-  const result = await plantCollection.find().limit(4).toArray();
-  res.json(result);
+  try {
+    const result = await plantCollection?.find().limit(4).toArray();
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to fetch trending plants' });
+  }
 })
 
 
 // get my added plants by userId 
  app.get('/api/my/plants', verifyToken, async (req: Request, res: Response) =>{
- const { userId } = req.query;
- const plant = await plantCollection.find({userId: userId as string}).toArray();
- res.json(plant);
+  try {
+    const { userId } = req.query;
+    const plant = await plantCollection?.find({userId: userId as string}).toArray();
+    res.json(plant);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to fetch user plants' });
+  }
 });
 // Delete user her plant
 app.delete('/api/delete/plant', verifyToken, async (req: Request, res: Response) =>{
- const {userId, id} = req.query;
- const plant = await plantCollection.deleteOne({userId: userId as string, _id: new ObjectId(id as string)});
- res.json(plant);
+  try {
+    const {userId, id} = req.query;
+    const plant = await plantCollection?.deleteOne({userId: userId as string, _id: new ObjectId(id as string)});
+    res.json(plant);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to delete plant' });
+  }
 });
 
 
-client
-  .connect()
-  .then(async () => {
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  })
-  .catch(console.error);
+if (client) {
+  client
+    .connect()
+    .then(async () => {
+      await client.db("admin").command({ ping: 1 });
+      console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    })
+    .catch(console.error);
+}
 
 
 
